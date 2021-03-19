@@ -76,9 +76,8 @@ def get_highest_key(array:list):
 
 def get_most_used_bases(profile_id:str,base_1:str,base_2:str):
     """
-
-    This funciton scans the given profile for all the viewd and ordered products and gets the inputted colmn values from these products.
-    These valuas are called base_1 and base_2,
+    This funciton scans the given profile for all the viewed products and gets the inputted colmn values from these products.
+    These values are called base_1 and base_2,
     for example if i chose gender and sub_category,
     the return wil provide the most chosen gender and the most chosen sub_category of this profile.
     :param profile_id: The profile we want to retrive data from
@@ -86,22 +85,15 @@ def get_most_used_bases(profile_id:str,base_1:str,base_2:str):
     :param base_2: The second colmn name
     :return: the most chosen base_1 and the most chosen base_2
     """
-    # cur.execute(
-    #     f"SELECT product_id FROM orders inner join buids on orders.sessionsid = buids.sessionsid where(buids.profileprofile_id = '{profile_id}') ")
-    # cur.execute(f"SELECT productid FROM viewed_before where(profileprofile_id = '{profil_id}') ")
-    #records = cur.fetchall()
-    #viewed_products = []
-    # for record in records:
-    #     viewed_products.append(record[0])
-    #cur.execute(f"SELECT productid FROM viewed_before where(profileprofile_id = '{profile_id}') ")
-    #records = cur.fetchall()
     lst_base_1 = []
     lst_base_2 = []
 
-    cur.execute(f"SELECT {base_1},{base_2} FROM product inner join viewed_before on viewed_before.productid = product.id where(viewed_before.profileprofile_id = '{profile_id}') ")
+    cur.execute(f"SELECT {base_1},{base_2},id FROM product inner join viewed_before on viewed_before.productid = product.id where(viewed_before.profileprofile_id = '{profile_id}') ")
     records = cur.fetchall()
+    ownviewd = []
     #print(records)
     for prod in records:
+        ownviewd.append(prod[2])
         if len(prod) != 0:
             lst_base_1.append(prod[1])
             lst_base_2.append(prod[0])
@@ -114,94 +106,71 @@ def get_most_used_bases(profile_id:str,base_1:str,base_2:str):
         high_base_2 = get_highest_key(lst_base_2)
     else:
         high_base_2 = None
-    #print(high_base_1,high_base_2)
-    # high_base_1 = 'hgello'
-    # high_base_2 = 'haai'
-    return high_base_1,high_base_2
+    return high_base_1,high_base_2,ownviewd
 
-
-def create_collaborative_recommendationstables_V2(base_1:str,base_2:str):
-    '''
-    This function generates a table with all the possible combinations of the inputed colmn values
-    These valuas are called base_1 and base_2,
-    for example if i chose gender and sub_category,
-    The function wil generate all possible combinations of values and with this combination the profile that match these references
-
-    :param base_1: The first colmn name
-    :param base_2: The second colmn name
-    :return: A filled table with all combinations and profile ID's that mach them
-    '''
-    print('function create_collaborative_recommendationstables_V2 started')
+def get_simmilar_profiles(profile_id:str,base_1:str,base_2:str):
+    """
+    This function wil get 4 new recommended products for the givven profile.
+    the fucntion checks first if this recommendation combination already had bin done and wil copy the results if it is
+    These products are bases on the base_1 and base_2 most vieuwed combinations
+    For example, i shop for garden stuff and for underwear, i buy garden stuf once and i buy multiple sorts of underwear
+    The function wil search for other profiles with most viewed item in the category underwear and the gender man
+    :param profile_id: the profile i want to have a recommendation for
+    :param base_1: the first parameter to search for
+    :param base_2: the second parameter
+    :return: 4 products that other users viewed with the base_1 and base_2 paramters
+    """
+    record_2, record_1, own_viewed = get_most_used_bases(profile_id, base_1, base_2)
+    #print(record_1)
+    if record_1!=None and "'" in record_1:
+        record_1 = record_1.replace("'","")
     cur.execute("""CREATE TABLE IF NOT EXISTS collaborative_recommendations
-                    (%s VARCHAR,
-                     %s VARCHAR,
-                     lst_profile_id VARCHAR);"""%(base_1,base_2))
+                        (recom_basis VARCHAR,lst_profile_id VARCHAR);""")
     con.commit()
-    cur.execute("DELETE FROM collaborative_recommendations")
-    con.commit()
-    cur.execute(f"SELECT profile_id FROM profile limit 100")
-    records = cur.fetchall()
-    combination ={}
-    i= 0
-    for profile_id in records:
-        #print(i,datetime.datetime.now() - time0)
-        i+=1
-        #print(profile_id)
-        high_base_1,high_base_2 = get_most_used_bases(profile_id[0],base_1,base_2)
-        if (high_base_1,high_base_2) not in combination and high_base_1!=None and high_base_2!=None:
-            combination[(high_base_1, high_base_2)] = []
-            combination[(high_base_1,high_base_2)].append(profile_id[0])
-        elif (high_base_1,high_base_2) in combination and high_base_1!=None and high_base_2!=None:
-            combination[(high_base_1,high_base_2)].append(profile_id[0])
-        if i % 100 == 0:
-            print(i,datetime.datetime.now() - time0)
-    sql=[]
-    for key,value in combination.items():
-        sql.append((key[0],key[1],str(value)))
-    print(datetime.datetime.now() - time0,'before executemany')
-    cur.executemany("INSERT INTO collaborative_recommendations VALUES (%s,%s,%s);",sql)
-    con.commit()
-    print(datetime.datetime.now() - time0,'after executemany')
+    cur.execute(f"Select lst_profile_id from collaborative_recommendations where(recom_basis ='{record_1}_{record_2}' ) ")
+    prev_recoms = cur.fetchall()
+    #print(prev_recoms)
+    if len(prev_recoms) != 0:
+        return prev_recoms[0][0].replace('[','').replace(']','').replace(' ','').split(',')
+    else:
+        cur.execute(f"select profileprofile_id from viewed_before inner join product on viewed_before.productid = product.id where (product.{base_1} ='{record_1}' and product.{base_2} ='{record_2}' ) ")
+        profID = cur.fetchall()
+        combinations = {}
+        highest = []
+        if len(profID) != 0:
+            for id in profID:
+                if id[0] not in combinations:
+                    combinations[id[0]] = 1
+                else:
+                    combinations[id[0]] +=1
 
-
-# create_collaborative_recommendation_table('5a393d68ed295900010384ca','5a393d68ed295900010384ca')
-#create_collaborative_recommendationstables_V2('sub_category','gender')
-def test(base_1:str,base_2:str,record:list):
-    cur.execute(f"SELECT {base_1},{base_2} FROM product inner join viewed_before on viewed_before.productid = product.id")#where(viewed_before.profileprofile_id = '{profile_id}')
-    records = cur.fetchall()
-    #print(records)
-    sql= []
-    done_records=[]
-    i = 0
-    for record in records:
-        #print(record)
-        if f'{record[0]}_{record[1]}' in done_records:
-            pass
+            for x in range(0,5):
+                highest.append(max(combinations, key=combinations.get))
+                del combinations[highest[x]]
+        recommend_products = []
+        x=0
+        if len(highest) != 0:
+            while len(recommend_products) <3 and x<len(highest):
+                cur.execute(f"SELECT id FROM product inner join viewed_before on viewed_before.productid = product.id  where(profileprofile_id = '{highest[x]}' and product.{base_1} ='{record_1}' and product.{base_2} ='{record_2}') ")
+                records = cur.fetchall()
+                for record in records:
+                    if record[0] not in own_viewed:
+                        recommend_products.append(((record[0])))
+                if len(recommend_products) <= 3:
+                    break
+                else:
+                    x+=1
+            string_recommend_products =",".join(recommend_products)
+            if len(recommend_products)>1:
+                cur.execute(f"insert into collaborative_recommendations values('{record_1}_{record_2}','{string_recommend_products}') ")
+                con.commit()
+                return recommend_products
+            else:
+                return None
         else:
-            done_records.append(f'{record[0]}_{record[1]}')
-            cur.execute(f"select profileprofile_id from viewed_before inner join product on viewed_before.productid = product.id where (product.{base_1} ='{record[0]}' and product.{base_2} ='{record[1]}' ) ")
-            profID = cur.fetchall()
-            combinations = {}
-            if len(profID) != 0:
-                for id in profID:
-                    if id[0] not in combinations:
-                        combinations[id[0]] = 1
-                    else:
-                        combinations[id[0]] +=1
-                highest = []
-                for x in range(0,5):
-                    highest.append(max(combinations, key=combinations.get))
-                    del combinations[highest[x]]
-                sql.append((record[0],record[1],str(highest)))
-                #
-                i+=1
-                # if i % 100 == 0:
-                print(i,datetime.datetime.now() - time0)
-    print(i, datetime.datetime.now() - time0,"executmany...")
-    cur.executemany("INSERT INTO collaborative_recommendations VALUES (%s,%s,%s);", sql)
-    con.commit()
-    print(datetime.datetime.now() - time0, 'after executemany')
+            return None
 
-test('sub_category','gender')
+recommended = get_simmilar_profiles('5a393d68ed295900010384ca','sub_category','gender')
+print(recommended,(datetime.datetime.now() - time0))
 cur.close()
 con.close()
