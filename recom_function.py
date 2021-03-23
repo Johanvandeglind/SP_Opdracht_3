@@ -88,8 +88,10 @@ def get_most_used_bases(profile_id:str,base_1:str,base_2:str):
     lst_base_1 = []
     lst_base_2 = []
 
-    cur.execute(f"SELECT {base_1},{base_2},id FROM product inner join viewed_before on viewed_before.productid = product.id where(viewed_before.profileprofile_id = '{profile_id}') ")
+    cur.execute(f"SELECT {base_1},{base_2},id FROM product inner join previously_recommended on previously_recommended.productid = product.id where(previously_recommended.profileprofile_id = '{profile_id}') ")
+
     records = cur.fetchall()
+
     ownviewd = []
     #print(records)
     for prod in records:
@@ -125,15 +127,15 @@ def get_simmilar_profiles(profile_id:str,base_1:str,base_2:str):
     if record_1!=None and "'" in record_1:
         record_1 = record_1.replace("'","")
     cur.execute("""CREATE TABLE IF NOT EXISTS collaborative_recommendations
-                        (recom_basis VARCHAR,lst_profile_id VARCHAR);""")
+                        (recom_basis VARCHAR,lst_product_id VARCHAR);""")
     con.commit()
-    cur.execute(f"Select lst_profile_id from collaborative_recommendations where(recom_basis ='{record_1}_{record_2}' ) ")
+    cur.execute(f"Select lst_product_id from collaborative_recommendations where(recom_basis ='{record_1}_{record_2}' ) ")
     prev_recoms = cur.fetchall()
     #print(prev_recoms)
     if len(prev_recoms) != 0:
         return prev_recoms[0][0].replace('[','').replace(']','').replace(' ','').split(',')
     else:
-        cur.execute(f"select profileprofile_id from viewed_before inner join product on viewed_before.productid = product.id where (product.{base_1} ='{record_1}' and product.{base_2} ='{record_2}' ) ")
+        cur.execute(f"select profileprofile_id from previously_recommended inner join product on previously_recommended.productid = product.id inner join properties on product.id = properties.productid where (product.{base_1} ='{record_1}' and properties.value ='{record_2}' ) ")
         profID = cur.fetchall()
         combinations = {}
         highest = []
@@ -150,18 +152,19 @@ def get_simmilar_profiles(profile_id:str,base_1:str,base_2:str):
         recommend_products = []
         x=0
         if len(highest) != 0:
-            while len(recommend_products) <3 and x<len(highest):
-                cur.execute(f"SELECT id FROM product inner join viewed_before on viewed_before.productid = product.id  where(profileprofile_id = '{highest[x]}' and product.{base_1} ='{record_1}' and product.{base_2} ='{record_2}') ")
+            for profile in highest:
+                cur.execute(f"SELECT id FROM product inner join previously_recommended on previously_recommended.productid = product.id  where(profileprofile_id = '{profile}' and product.{base_1} ='{record_1}' and properties.value ='{record_2})' ")
                 records = cur.fetchall()
                 for record in records:
                     if record[0] not in own_viewed:
                         recommend_products.append(((record[0])))
-                if len(recommend_products) <= 3:
+                    if len(recommend_products) == 4:
+                        break
+                if len(recommend_products) == 4:
                     break
-                else:
-                    x+=1
+
             string_recommend_products =",".join(recommend_products)
-            if len(recommend_products)>1:
+            if len(recommend_products)== 4:
                 cur.execute(f"insert into collaborative_recommendations values('{record_1}_{record_2}','{string_recommend_products}') ")
                 con.commit()
                 return recommend_products
@@ -169,8 +172,13 @@ def get_simmilar_profiles(profile_id:str,base_1:str,base_2:str):
                 return None
         else:
             return None
-
-recommended = get_simmilar_profiles('5a393d68ed295900010384ca','sub_category','gender')
-print(recommended,(datetime.datetime.now() - time0))
+cur.execute("select DISTINCT profileprofile_id from previously_recommended")
+profiles = cur.fetchall()
+print(profiles)
+for profile in profiles:
+    #print(profile)
+    recommended = get_simmilar_profiles(profile[0],'sub_sub_category','doelgroep')
+    print(recommended,(datetime.datetime.now() - time0))
+#cur.execute("DELETE FROM collaborative_recommendations")
 cur.close()
 con.close()
